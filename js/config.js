@@ -3,6 +3,6 @@
 // A chave publishable/anon pode ficar aqui: o acesso aos dados é protegido
 // pelo login e pelas regras do banco (supabase/schema.sql).
 window.HIDROTECH_CONFIG = {
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  supabaseUrl: 'https://vplhzfchjkvqzktfnlcs.supabase.co',
+  supabaseAnonKey: 'sb_publishable_FriiNJvFGozZnjRx9f2VKw_Kai7C-gU',
 };
