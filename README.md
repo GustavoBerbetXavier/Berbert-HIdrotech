@@ -23,7 +23,7 @@ do dinheiro na mão.
 - **Aviso de garantia**: ao abrir um serviço novo para um cliente com serviço ainda na garantia, o app avisa.
 - **Clientes**: cadastro simples, busca, botões de ligar, WhatsApp e abrir o endereço no mapa,
   histórico de serviços, total gasto e quanto falta receber.
-- **Orçamentos**: itens e valores, PDF pelo WhatsApp; quando o cliente aprova, vira serviço com um toque.
+- **Orçamentos**: itens e valores, **fotos da visita** (vão no PDF para o cliente ver a situação), PDF pelo WhatsApp; quando o cliente aprova, vira serviço com um toque.
 - **Financeiro**: entradas e gastos do mês por categoria e forma de pagamento, gráfico dos
   últimos 6 meses, **a receber** (com botão "Recebi" e lembrete de pagamento pelo WhatsApp com a chave Pix),
   **contas a pagar**, **gastos fixos do mês** (DAS do MEI, celular...), resumo do ano com o

@@ -1,6 +1,6 @@
 // Service worker: guarda os arquivos do sistema para o app abrir rápido e também sem internet.
 // Os dados vêm do banco (as requisições ao Supabase não passam por este cache).
-const CACHE = 'hidrotech-v1';
+const CACHE = 'hidrotech-v2';
 const ARQUIVOS = [
   './', './index.html', './css/style.css', './manifest.json',
   './js/vendor/supabase.js', './js/config.js', './js/db.js', './js/app.js', './js/clientes.js',

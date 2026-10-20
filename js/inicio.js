@@ -430,7 +430,7 @@ DB.definirAoMudarFila((n) => {
 $('#sinc').addEventListener('click', () => DB.enviarFila().then(() => avisar(DB.pendentes() ? 'Ainda sem internet. Vai enviar sozinho quando voltar.' : 'Tudo enviado!')));
 
 /* ---------- Versão nova ---------- */
-const VERSAO_APP = '2026-10-20.1';
+const VERSAO_APP = '2026-10-20.2';
 async function verificarVersao() {
   try {
     const r = await fetch('versao.json', { cache: 'no-store' });

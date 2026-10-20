@@ -1,5 +1,6 @@
 // Orçamentos: itens e valores, PDF pelo WhatsApp e, quando o cliente aprova, vira serviço.
 
+const ETAPAS_ORC = [['inspecao', 'Situação encontrada na visita']];
 const SITUACOES_ORC = [['pendente', 'Aguardando', 'amarelo'], ['aprovado', 'Aprovado', 'verde'], ['recusado', 'Recusado', 'cinza']];
 const totalOrcamento = (o) => Math.max(0, subtotalItens(o.itens) - (Number(o.desconto) || 0));
 function tagOrcamento(o) {
@@ -26,7 +27,7 @@ function orcamentos(el) {
       const vencido = o.status === 'pendente' && o.validadeDias && somarDias(o.data, o.validadeDias) < hojeISO();
       return `<div class="item-lista" data-orc="${o.id}"><div class="item-info"><b>${esc(nomeCliente(o.clienteId))}</b>
         <small>nº ${o.numero} · ${dataBR(o.data)}${o.descricao ? ' · ' + esc(o.descricao.slice(0, 60)) : ''}</small>
-        <div class="tags">${tagOrcamento(o)} ${vencido ? tag('Validade vencida', 'vermelho') : ''}</div></div>
+        <div class="tags">${tagOrcamento(o)} ${vencido ? tag('Validade vencida', 'vermelho') : ''} ${(o.fotos || []).length ? tag(`${o.fotos.length} foto(s)`, 'cinza') : ''}</div></div>
         <div class="item-valor">${moeda(totalOrcamento(o))}</div></div>`;
     }).join('')}</div>` : '<div class="cartao vazio">Nenhum orçamento aqui.</div>'}`;
   $('#novo', el).addEventListener('click', () => novoOrcamento());
@@ -71,6 +72,10 @@ function paginaOrcamento(el, id) {
         ${campo('Validade (dias)', 'validadeDias', x.validadeDias, 'number', 'min="0"')}
         <div class="campo-escolha full"><span>Situação</span>${botoesEscolha('status', SITUACOES_ORC, x.status || 'pendente')}</div>
         ${campo('Descrição do serviço', 'descricao', x.descricao, 'textarea', 'full placeholder="Ex.: desentupimento da rede de esgoto do condomínio com hidrojateamento..."')}
+      </section>
+      <section class="cartao"><h3>Fotos da visita</h3>
+        <p class="ajuda">Mostre ao cliente como está a caixa, o cano ou o ralo. As fotos vão no PDF do orçamento e, se ele aprovar, viram as fotos do "antes" do serviço.</p>
+        <div id="fotos"></div>
       </section>
       <section class="cartao"><h3>Valores</h3>
         ${tabela.length ? `<label class="campo-linha">Adicionar da tabela de preços<select id="da-tabela"><option value="">— escolher —</option>
@@ -130,10 +135,13 @@ function paginaOrcamento(el, id) {
     if (e.target.closest('#itens') || e.target.name === 'desconto') atualizarTotal();
   });
   form.addEventListener('change', () => (sujo = true));
-  protegerSaida = { sujo: () => sujo, descartar: () => {} };
+  const fotos = editorFotos($('#fotos', el), { etapas: ETAPAS_ORC, fotos: x.fotos, pasta: `orcamentos/${orcId}`,
+    botao: $('#salvar', el), aoMudar: () => (sujo = true) });
+  protegerSaida = { sujo: () => sujo || fotos.enviando() > 0, descartar: () => fotos.descartar() };
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (fotos.enviando()) { avisar('Aguarde terminar de enviar as fotos.', 'erro'); return; }
     if (!clienteValido(form)) return;
     const d = lerForm(form);
     const itens = lerItens().filter((i) => i.descricao || i.valor);
@@ -142,8 +150,9 @@ function paginaOrcamento(el, id) {
       id: orcId, numero: o ? o.numero : DB.proximoNumero('orcamentos'),
       clienteId: d.clienteId, data: d.data, validadeDias: Number(d.validadeDias) || 0, status: d.status || 'pendente',
       descricao: d.descricao, itens, desconto: num(d.desconto), pagamento: d.pagamento,
-      garantiaDias: Number(d.garantiaDias) || 0, obs: d.obs,
+      garantiaDias: Number(d.garantiaDias) || 0, obs: d.obs, fotos: fotos.lista(),
     });
+    fotos.confirmar();
     sujo = false;
     protegerSaida = null;
     avisar('Orçamento salvo.');
@@ -152,7 +161,9 @@ function paginaOrcamento(el, id) {
   $('#voltar', el).addEventListener('click', () => irPara('orcamentos'));
   if (!o) return;
   const avisarSujo = () => !sujo || confirmar('Há alterações não salvas. O documento sai com o que já estava salvo. Continuar?');
-  $('#imprimir', el).addEventListener('click', () => { if (avisarSujo()) imprimir(documentoOrcamento(DB.obter('orcamentos', orcId))); });
+  $('#imprimir', el).addEventListener('click', (e) => {
+    if (avisarSujo()) enviando(e.target, async () => imprimir(await documentoOrcamento(DB.obter('orcamentos', orcId))), 'Preparando...');
+  });
   $('#whats', el).addEventListener('click', (e) => {
     if (!avisarSujo()) return;
     const atual = DB.obter('orcamentos', orcId);
@@ -165,13 +176,15 @@ function paginaOrcamento(el, id) {
       if (sujo) { avisar('Salve o orçamento antes.', 'erro'); return; }
       const atual = DB.obter('orcamentos', orcId);
       novoServico({ clienteId: atual.clienteId, itens: atual.itens.map((i) => ({ ...i })), desconto: atual.desconto,
-        garantiaDias: atual.garantiaDias, descricao: atual.descricao, orcamentoId: atual.id });
+        garantiaDias: atual.garantiaDias, descricao: atual.descricao, orcamentoId: atual.id,
+        fotos: (atual.fotos || []).map((f) => ({ ...f, etapa: 'antes' })) });
     });
   }
   if ($('#ver-servico', el)) $('#ver-servico', el).addEventListener('click', () => irPara('servico/' + o.servicoId));
   $('#excluir', el).addEventListener('click', () => {
     if (!confirmar(`Excluir o orçamento nº ${o.numero}?`)) return;
     DB.remover('orcamentos', orcId);
+    removerFotosLivres([...(o.fotos || []), ...fotos.lista()].map((f) => f.caminho));
     protegerSaida = null;
     irPara('orcamentos', true);
   });

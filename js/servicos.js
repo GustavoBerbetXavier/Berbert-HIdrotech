@@ -125,6 +125,85 @@ async function urlsFotos(caminhos) {
   }
   return Object.fromEntries(caminhos.filter((c) => cacheUrls.has(c)).map((c) => [c, cacheUrls.get(c).url]));
 }
+// Apaga do armazenamento as fotos que nenhum serviço ou orçamento usa mais
+// (as fotos do orçamento aprovado continuam no serviço criado a partir dele).
+function removerFotosLivres(caminhos) {
+  const usadas = new Set([...DB.listar('servicos'), ...DB.listar('orcamentos')].flatMap((r) => (r.fotos || []).map((f) => f.caminho)));
+  const livres = caminhos.filter((c) => c && !usadas.has(c));
+  if (livres.length) DB.removerFotos(livres).catch(() => {});
+}
+// Fotos de um serviço ou orçamento, separadas por etapa (antes, durante, depois...).
+// Envia cada foto na hora; as tiradas só saem do armazenamento depois de salvar.
+function editorFotos(caixa, { etapas, fotos: iniciais, pasta, botao, aoMudar }) {
+  const fotos = (iniciais || []).map((f) => ({ ...f }));
+  const enviadasAgora = [], removidas = [];
+  let enviando = 0;
+  caixa.innerHTML = `<div class="fotos-etapas ${etapas.length === 3 ? 'tres' : etapas.length === 1 ? 'uma' : ''}">${etapas.map(([etapa, rotulo]) => `<div>
+    <div class="fotos-cab"><b>${rotulo}</b><div class="acoes">
+      <label class="btn peq">Câmera<input type="file" accept="image/*" capture="environment" data-etapa="${etapa}" hidden></label>
+      <label class="btn sec peq">Galeria<input type="file" accept="image/*" multiple data-etapa="${etapa}" hidden></label></div></div>
+    <div class="fotos-grade" data-grade="${etapa}"></div></div>`).join('')}</div>`;
+  const desenhar = () => {
+    etapas.forEach(([etapa]) => {
+      const lista = fotos.filter((f) => f.etapa === etapa);
+      $(`[data-grade="${etapa}"]`, caixa).innerHTML = lista.length ? lista.map((f) => `<figure class="foto-item" data-caminho="${esc(f.caminho)}">
+        ${f.url ? `<img src="${esc(f.url)}" alt="">` : '<div class="foto-carregando">Carregando...</div>'}
+        <input data-legenda value="${esc(f.legenda || '')}" placeholder="Legenda (opcional)">
+        <button type="button" class="btn sec peq" data-tirar-foto>Remover</button></figure>`).join('')
+        : '<p class="ajuda">Nenhuma foto.</p>';
+    });
+  };
+  desenhar();
+  if (fotos.length) {
+    urlsFotos(fotos.map((f) => f.caminho)).then((urls) => { fotos.forEach((f) => (f.url = urls[f.caminho] || '')); desenhar(); })
+      .catch((err) => avisar('Não foi possível mostrar as fotos: ' + err.message, 'erro'));
+  }
+  caixa.addEventListener('input', (e) => {
+    if (!e.target.matches('[data-legenda]')) return;
+    const f = fotos.find((y) => y.caminho === e.target.closest('[data-caminho]').dataset.caminho);
+    if (f) f.legenda = e.target.value;
+  });
+  caixa.addEventListener('click', (e) => {
+    if (!e.target.matches('[data-tirar-foto]')) return;
+    const i = fotos.findIndex((f) => f.caminho === e.target.closest('[data-caminho]').dataset.caminho);
+    if (i >= 0) removidas.push(...fotos.splice(i, 1));
+    aoMudar();
+    desenhar();
+  });
+  const textoBotao = botao.textContent;
+  $$('[data-etapa]', caixa).forEach((input) => input.addEventListener('change', async () => {
+    const arquivos = [...input.files];
+    input.value = '';
+    for (const [i, arq] of arquivos.entries()) {
+      enviando++;
+      botao.disabled = true;
+      botao.textContent = `Enviando foto ${i + 1} de ${arquivos.length}...`;
+      try {
+        const blob = await comprimirFoto(arq);
+        const caminho = `${pasta}/${DB.novoId()}.jpg`;
+        await DB.enviarFoto(caminho, blob);
+        const f = { caminho, etapa: input.dataset.etapa, legenda: '', url: URL.createObjectURL(blob) };
+        fotos.push(f);
+        enviadasAgora.push(f);
+        aoMudar();
+        desenhar();
+      } catch (err) {
+        avisar('A foto não foi enviada: ' + err.message, 'erro');
+      } finally {
+        enviando--;
+        if (!enviando) { botao.disabled = false; botao.textContent = textoBotao; }
+      }
+    }
+  }));
+  return {
+    lista: () => fotos.map(({ caminho, etapa, legenda }) => ({ caminho, etapa, legenda: legenda || '' })),
+    enviando: () => enviando,
+    // Depois de salvar: apaga as fotos que foram tiradas.
+    confirmar: () => removerFotosLivres(removidas.map((f) => f.caminho)),
+    // Saiu sem salvar: apaga as fotos enviadas nesta edição.
+    descartar: () => removerFotosLivres(enviadasAgora.map((f) => f.caminho)),
+  };
+}
 
 function paginaServico(el, id) {
   const novo = id === 'novo';
@@ -146,10 +225,6 @@ function paginaServico(el, id) {
     garantiaDias: Number(cfg.garantiaPadrao ?? 30), retornoMeses: anterior ? anterior.retornoMeses || 0 : 0,
     recomendacoes: [], forma: 'Pix', ...padrao,
   };
-  const fotos = (x.fotos || []).map((f) => ({ ...f }));
-  const enviadasAgora = [];
-  const removidas = [];
-  let enviandoFotos = 0;
   let assinatura = x.assinatura || '';
   let sujo = false;
 
@@ -189,11 +264,7 @@ function paginaServico(el, id) {
 
       <section class="cartao"><h3>Fotos</h3>
         <p class="ajuda">As fotos vão para o laudo. Precisa de internet para enviar.</p>
-        <div class="fotos-etapas tres">${ETAPAS_FOTO.map(([etapa, rotulo]) => `<div>
-          <div class="fotos-cab"><b>${rotulo}</b><div class="acoes">
-            <label class="btn peq">Câmera<input type="file" accept="image/*" capture="environment" data-etapa="${etapa}" hidden></label>
-            <label class="btn sec peq">Galeria<input type="file" accept="image/*" multiple data-etapa="${etapa}" hidden></label></div></div>
-          <div class="fotos-grade" data-grade="${etapa}"></div></div>`).join('')}</div>
+        <div id="fotos"></div>
       </section>
 
       <section class="cartao"><h3>Garantia e recomendações</h3>
@@ -300,59 +371,8 @@ function paginaServico(el, id) {
   mostrarPagto();
 
   /* Fotos */
-  const desenharFotos = () => {
-    ETAPAS_FOTO.forEach(([etapa]) => {
-      const lista = fotos.filter((f) => f.etapa === etapa);
-      $(`[data-grade="${etapa}"]`, el).innerHTML = lista.length ? lista.map((f) => `<figure class="foto-item" data-caminho="${esc(f.caminho)}">
-        ${f.url ? `<img src="${esc(f.url)}" alt="">` : '<div class="foto-carregando">Carregando...</div>'}
-        <input data-legenda value="${esc(f.legenda || '')}" placeholder="Legenda (opcional)">
-        <button type="button" class="btn sec peq" data-tirar-foto>Remover</button></figure>`).join('')
-        : '<p class="ajuda">Nenhuma foto.</p>';
-    });
-  };
-  desenharFotos();
-  if (fotos.length) {
-    urlsFotos(fotos.map((f) => f.caminho)).then((urls) => { fotos.forEach((f) => (f.url = urls[f.caminho] || '')); desenharFotos(); })
-      .catch((err) => avisar('Não foi possível mostrar as fotos: ' + err.message, 'erro'));
-  }
-  el.addEventListener('input', (e) => {
-    if (!e.target.matches('[data-legenda]')) return;
-    const f = fotos.find((y) => y.caminho === e.target.closest('[data-caminho]').dataset.caminho);
-    if (f) f.legenda = e.target.value;
-  });
-  el.addEventListener('click', (e) => {
-    if (!e.target.matches('[data-tirar-foto]')) return;
-    const caminho = e.target.closest('[data-caminho]').dataset.caminho;
-    const i = fotos.findIndex((f) => f.caminho === caminho);
-    if (i >= 0) removidas.push(...fotos.splice(i, 1));
-    sujo = true;
-    desenharFotos();
-  });
-  const botaoSalvar = $('#salvar', el);
-  $$('[data-etapa]', el).forEach((input) => input.addEventListener('change', async () => {
-    const arquivos = [...input.files];
-    input.value = '';
-    for (const [i, arq] of arquivos.entries()) {
-      enviandoFotos++;
-      botaoSalvar.disabled = true;
-      botaoSalvar.textContent = `Enviando foto ${i + 1} de ${arquivos.length}...`;
-      try {
-        const blob = await comprimirFoto(arq);
-        const caminho = `servicos/${servicoId}/${DB.novoId()}.jpg`;
-        await DB.enviarFoto(caminho, blob);
-        const f = { caminho, etapa: input.dataset.etapa, legenda: '', url: URL.createObjectURL(blob) };
-        fotos.push(f);
-        enviadasAgora.push(f);
-        sujo = true;
-        desenharFotos();
-      } catch (err) {
-        avisar('A foto não foi enviada: ' + err.message, 'erro');
-      } finally {
-        enviandoFotos--;
-        if (!enviandoFotos) { botaoSalvar.disabled = false; botaoSalvar.textContent = 'Salvar'; }
-      }
-    }
-  }));
+  const fotos = editorFotos($('#fotos', el), { etapas: ETAPAS_FOTO, fotos: x.fotos, pasta: `servicos/${servicoId}`,
+    botao: $('#salvar', el), aoMudar: () => (sujo = true) });
 
   /* Assinatura */
   padAssinatura($('#assinatura', el), assinatura, (img) => { assinatura = img; sujo = true; });
@@ -371,11 +391,11 @@ function paginaServico(el, id) {
 
   /* Salvar */
   protegerSaida = {
-    sujo: () => sujo || enviandoFotos > 0,
-    descartar: () => { if (enviadasAgora.length) DB.removerFotos(enviadasAgora.map((f) => f.caminho)).catch(() => {}); },
+    sujo: () => sujo || fotos.enviando() > 0,
+    descartar: () => fotos.descartar(),
   };
   const salvar = (concluir) => {
-    if (enviandoFotos) { avisar('Aguarde terminar de enviar as fotos.', 'erro'); return; }
+    if (fotos.enviando()) { avisar('Aguarde terminar de enviar as fotos.', 'erro'); return; }
     if (!clienteValido(form)) return;
     const d = lerForm(form);
     const status = concluir ? 'concluido' : (d.status || 'execucao');
@@ -393,7 +413,7 @@ function paginaServico(el, id) {
       itens: itensLidos, desconto: num(d.desconto), forma: d.forma, pago: d.pago,
       dataPagamento: d.pago ? (d.dataPagamento || hojeISO()) : '', previsaoPagamento: d.pago ? '' : d.previsaoPagamento,
       assinatura, assinouNome: d.assinouNome, obs: d.obs,
-      fotos: fotos.map(({ caminho, etapa, legenda }) => ({ caminho, etapa, legenda: legenda || '' })),
+      fotos: fotos.lista(),
       ...(padrao.orcamentoId ? { orcamentoId: padrao.orcamentoId } : {}),
     };
     if (!dados.tipos.length && !dados.problema && !dados.descricao && !itensLidos.length) {
@@ -401,7 +421,7 @@ function paginaServico(el, id) {
       return;
     }
     DB.salvarItem('servicos', dados);
-    if (removidas.length) DB.removerFotos(removidas.map((f) => f.caminho)).catch(() => {});
+    fotos.confirmar();
     if (padrao.orcamentoId) {
       const o = DB.obter('orcamentos', padrao.orcamentoId);
       if (o) DB.salvarItem('orcamentos', { id: o.id, status: 'aprovado', servicoId });
@@ -419,8 +439,7 @@ function paginaServico(el, id) {
       const gastos = gastosDoServico(servicoId);
       if (!confirmar(`Excluir o serviço nº ${s.numero}?${gastos.length ? ` Os ${gastos.length} gasto(s) ligados a ele continuam no financeiro.` : ''}`)) return;
       DB.remover('servicos', servicoId);
-      const caminhos = [...(s.fotos || []), ...enviadasAgora].map((f) => f.caminho);
-      if (caminhos.length) DB.removerFotos(caminhos).catch(() => {});
+      removerFotosLivres([...(s.fotos || []), ...fotos.lista()].map((f) => f.caminho));
       protegerSaida = null;
       avisar('Serviço excluído.');
       irPara('servicos', true);

@@ -551,7 +551,7 @@ h3 { font-size: 16px; }
 @media (max-width: 600px) {
   .fixo-linha { grid-template-columns: 1fr 1fr; border-bottom: 1px dashed var(--borda); padding-bottom: 8px; }
   .fixo-linha input[data-c=descricao] { grid-column: 1 / -1; }
-  .item-valor-linha { grid-template-columns: 1fr 52px 96px auto; }
+  .item-valor-linha { grid-template-columns: 64px 1fr auto; }
   .item-valor-linha input[data-c=descricao] { grid-column: 1 / -1; }
   .item-valor-linha.duas { grid-template-columns: 1fr 110px auto; }
   .item-valor-linha.duas input[data-c=descricao] { grid-column: auto; }
@@ -599,3 +599,8 @@ tfoot th, tfoot td { background: #fafbfa; color: var(--texto); }
 .tabela-itens { margin: 8px 0 10px; }
 .tabela-itens td.num, .tabela-itens th.num { text-align: right; white-space: nowrap; }
 @media (max-width: 800px) { #aviso-flutuante { bottom: calc(84px + env(safe-area-inset-bottom)); } }
+.fotos-etapas.uma { grid-template-columns: 1fr; }
+.fotos-orc { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.fotos-orc figure { margin: 0; break-inside: avoid; page-break-inside: avoid; }
+.fotos-orc img { width: 100%; height: 4.2cm; object-fit: cover; border: 1px solid #bbb; display: block; }
+.fotos-orc figcaption { font-size: 11px; text-align: center; margin-top: 2px; }

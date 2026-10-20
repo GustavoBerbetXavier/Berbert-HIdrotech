@@ -128,15 +128,20 @@ function valorPorExtenso(valor) {
 }
 
 /* ---------- Orçamento ---------- */
-function documentoOrcamento(o) {
+async function documentoOrcamento(o) {
   const cli = DB.obter('clientes', o.clienteId) || {};
   const cfg = DB.config();
+  const fotos = o.fotos || [];
+  const urls = fotos.length ? await urlsFotos(fotos.map((f) => f.caminho)) : {};
+  const comUrl = fotos.filter((f) => urls[f.caminho]);
   return `<div class="doc">${cabecalhoDoc()}
     <h2>Orçamento nº ${o.numero}</h2>
     ${blocoClienteDoc(cli)}
     <div class="info" style="margin:4px 0 10px"><div><b>Data:</b> ${dataBR(o.data)}</div>
       <div><b>Validade:</b> ${o.validadeDias ? `${o.validadeDias} dias (até ${dataBR(somarDias(o.data, o.validadeDias))})` : '—'}</div></div>
     ${o.descricao ? `<h3>Descrição do serviço</h3><p style="white-space:pre-line">${esc(o.descricao)}</p>` : ''}
+    ${comUrl.length ? `<h3>Fotos da visita</h3><div class="fotos-orc">${comUrl.map((f) => `<figure>
+      <img src="${esc(urls[f.caminho])}" alt="">${f.legenda ? `<figcaption>${esc(f.legenda)}</figcaption>` : ''}</figure>`).join('')}</div>` : ''}
     <h3>Valores</h3>
     ${tabelaItensDoc(o.itens, o.desconto)}
     ${o.pagamento ? `<p><b>Condições de pagamento:</b> ${esc(o.pagamento)}</p>` : ''}
