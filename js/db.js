@@ -56,6 +56,7 @@ const DB = (() => {
     if (/Email not confirmed/i.test(m)) return 'E-mail ainda não confirmado. Marque "Auto Confirm User" ao criar o login no Supabase (veja o README).';
     if (/Password should be at least/i.test(m)) return 'A senha precisa ter pelo menos 6 caracteres.';
     if (/row-level security|permission denied/i.test(m)) return 'Sem permissão para esta ação (login não liberado).';
+    if (/Could not find the table|schema cache|relation .* does not exist/i.test(m)) return 'O banco de dados ainda não foi preparado. Rode o arquivo supabase/schema.sql no SQL Editor do Supabase (veja o README) e entre de novo.';
     if (semRede(m)) return 'Sem conexão com a internet.';
     return m;
   }
